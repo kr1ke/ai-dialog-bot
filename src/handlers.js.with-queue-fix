@@ -1,0 +1,281 @@
+const db = require('./services/db');
+const textProcessor = require('./processors/text');
+const visionProcessor = require('./processors/vision');
+const voiceProcessor = require('./processors/voice');
+const logger = require('./logger');
+
+// Message processing queue per user (prevents race conditions)
+const userQueues = new Map();
+
+// Process message with queue to ensure sequential handling
+async function processWithQueue(userId, handler) {
+  if (!userQueues.has(userId)) {
+    userQueues.set(userId, Promise.resolve());
+  }
+
+  const currentQueue = userQueues.get(userId);
+  const newQueue = currentQueue.then(handler).catch(err => {
+    logger.error('Queue processing failed', { userId, error: err.message });
+  });
+
+  userQueues.set(userId, newQueue);
+  return newQueue;
+}
+
+// Handle incoming messages
+async function handleMessage(bot, msg) {
+  const userId = msg.from.id;
+  const isForwarded = !!msg.forward_date;
+
+  // Handle forwarded messages with queue to prevent race conditions
+    if (isForwarded) {
+      return processWithQueue(userId, async () => {
+        try {
+          // Get or create session atomically
+          let session = await db.getOrCreateSession(userId, 'collecting');
+
+          // If session is not in collecting state, reset it (new conversation)
+          if (session.state !== 'collecting') {
+            session = await db.resetSession(userId, 'collecting');
+          }
+
+          // Determine author
+          let author;
+          if (msg.forward_from) {
+            author = {
+              isUser: msg.forward_from.id === userId,
+              name: msg.forward_from.first_name || 'Unknown',
+              id: msg.forward_from.id
+            };
+          } else {
+            // Forwarded from channel or hidden user
+            author = {
+              isUser: false,
+              name: msg.forward_sender_name || 'Unknown',
+              id: null
+            };
+          }
+
+          // Process message type
+          let messageData = {
+            author,
+            timestamp: msg.forward_date,
+            metadata: {}
+          };
+
+          if (msg.text) {
+            // Text message
+            messageData.text = msg.text;
+            messageData.type = 'text';
+          } else if (msg.photo) {
+            // Photo message
+            const fileId = msg.photo[msg.photo.length - 1].file_id;
+            const description = await visionProcessor.analyzeImage(bot, fileId);
+            messageData.text = `[Изображение: ${description}]`;
+            messageData.type = 'image';
+            messageData.metadata.fileId = fileId;
+          } else if (msg.voice) {
+            // Voice message
+            const transcription = await voiceProcessor.transcribe(bot, msg.voice.file_id);
+            messageData.text = transcription;
+            messageData.type = 'voice';
+            messageData.metadata.fileId = msg.voice.file_id;
+          } else {
+            // Unsupported message type
+            await bot.sendMessage(userId, '❌ Этот тип сообщения не поддерживается');
+            return;
+          }
+
+          // Add message to session
+          await db.addMessageToSession(userId, messageData);
+
+          // Get updated session to count messages
+          session = await db.getSession(userId);
+          const count = session.messages.length;
+
+          // Send confirmation
+          await bot.sendMessage(userId, `✓ ${count}`);
+
+          // Log statistics
+          await db.logAction({
+            userId,
+            actionType: 'forward_message',
+            sessionMessagesCount: count
+          });
+        } catch (error) {
+          logger.error('Forwarded message handling failed', { userId, error: error.message });
+          await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
+          await db.logAction({ userId, actionType: 'forward_error', errorOccurred: true });
+        }
+      });
+    }
+
+  try {
+
+    // Handle text messages (not commands, not forwarded)
+    if (msg.text && !msg.text.startsWith('/')) {
+      const session = await db.getSession(userId);
+
+      if (!session) {
+        await bot.sendMessage(userId, 'Переслай сообщения и используй /analyze');
+        return;
+      }
+
+      if (session.state === 'collecting') {
+        await bot.sendMessage(userId, '💡 Используй /analyze');
+        return;
+      }
+
+      if (session.state === 'waiting_action' || session.state === 'conversation') {
+        // Process custom request
+        const { result, metadata } = await textProcessor.processContext(
+          session.messages,
+          msg.text,
+          userId
+        );
+
+        // Send response with regenerate button
+        await bot.sendMessage(userId, result, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🔄 Еще варианты', callback_data: 'regenerate' }]
+            ]
+          }
+        });
+
+        // Update session
+        await db.updateSession(userId, {
+          state: 'conversation',
+          last_instruction: msg.text
+        });
+
+        // Log statistics
+        await db.logAction({
+          userId,
+          actionType: 'custom_request',
+          sessionMessagesCount: session.messages.length,
+          modelUsed: metadata.model,
+          tokensUsed: metadata.tokens,
+          responseTimeMs: metadata.responseTime
+        });
+      }
+    }
+  } catch (error) {
+    logger.error('Message handling failed', { userId, error: error.message });
+    await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
+    await db.logAction({ userId, actionType: 'message_error', errorOccurred: true });
+  }
+}
+
+// Handle callback queries (button clicks)
+async function handleCallback(bot, query) {
+  const userId = query.from.id;
+  const action = query.data;
+
+  try {
+    const session = await db.getSession(userId);
+
+    if (!session) {
+      await bot.answerCallbackQuery(query.id, {
+        text: '❌ Сессия истекла',
+        show_alert: true
+      });
+      return;
+    }
+
+    // Handle different actions
+    if (action === 'summary' || action === 'formal' || action === 'friendly') {
+      // Process with predefined instruction
+      const { result, metadata } = await textProcessor.processContext(
+        session.messages,
+        action,
+        userId
+      );
+
+      // Send response
+      await bot.sendMessage(userId, result, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔄 Еще варианты', callback_data: 'regenerate' }]
+          ]
+        }
+      });
+
+      // Update session
+      await db.updateSession(userId, {
+        state: 'conversation',
+        last_instruction: action
+      });
+
+      // Log statistics
+      await db.logAction({
+        userId,
+        actionType: `button_${action}`,
+        sessionMessagesCount: session.messages.length,
+        modelUsed: metadata.model,
+        tokensUsed: metadata.tokens,
+        responseTimeMs: metadata.responseTime
+      });
+
+      await bot.answerCallbackQuery(query.id);
+    } else if (action === 'clear') {
+      // Clear session
+      await db.deleteSession(userId);
+      await bot.sendMessage(userId, '🗑 Буфер очищен');
+      await db.logAction({
+        userId,
+        actionType: 'button_clear'
+      });
+
+      await bot.answerCallbackQuery(query.id);
+    } else if (action === 'regenerate') {
+      // Regenerate with last instruction
+      if (!session.last_instruction) {
+        await bot.answerCallbackQuery(query.id, {
+          text: '❌ Нет предыдущей инструкции',
+          show_alert: true
+        });
+        return;
+      }
+
+      const { result, metadata } = await textProcessor.processContext(
+        session.messages,
+        session.last_instruction,
+        userId
+      );
+
+      // Send response
+      await bot.sendMessage(userId, result, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔄 Еще варианты', callback_data: 'regenerate' }]
+          ]
+        }
+      });
+
+      // Log statistics
+      await db.logAction({
+        userId,
+        actionType: 'regenerate',
+        sessionMessagesCount: session.messages.length,
+        modelUsed: metadata.model,
+        tokensUsed: metadata.tokens,
+        responseTimeMs: metadata.responseTime
+      });
+
+      await bot.answerCallbackQuery(query.id);
+    }
+  } catch (error) {
+    logger.error('Callback handling failed', { userId, action, error: error.message });
+    await bot.answerCallbackQuery(query.id, {
+      text: '❌ Сервис временно недоступен',
+      show_alert: true
+    });
+    await db.logAction({ userId, actionType: 'callback_error', errorOccurred: true });
+  }
+}
+
+module.exports = {
+  handleMessage,
+  handleCallback
+};

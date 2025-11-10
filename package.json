@@ -1,0 +1,19 @@
+{
+  "name": "telegram-context-bot",
+  "version": "1.0.0",
+  "description": "Telegram Context Assistant Bot - AI-powered bot for analyzing conversations",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "pg": "^8.11.3",
+    "axios": "^1.6.2",
+    "form-data": "^4.0.0",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "dotenv": "^16.3.1"
+  },
+  "license": "ISC"
+}

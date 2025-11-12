@@ -40,3 +40,6 @@ temp/
 # Coverage
 coverage/
 .nyc_output/
+
+
+opencode.jsonc

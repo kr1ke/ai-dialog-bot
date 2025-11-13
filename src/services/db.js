@@ -79,6 +79,7 @@ async function ensureSession(userId, state = 'collecting') {
          state = EXCLUDED.state,
          messages = '[]',
          last_instruction = NULL,
+         last_message_id = NULL,
          updated_at = NOW()
        RETURNING *`,
       [userId, state]
@@ -95,7 +96,7 @@ async function resetSession(userId, state = 'collecting') {
   try {
     const result = await pool.query(
       `UPDATE sessions
-       SET state = $1, messages = '[]', last_instruction = NULL, updated_at = NOW()
+       SET state = $1, messages = '[]', last_instruction = NULL, last_message_id = NULL, updated_at = NOW()
        WHERE user_id = $2
        RETURNING *`,
       [state, userId]
@@ -149,6 +150,10 @@ async function updateSession(userId, data) {
     if (data.last_instruction !== undefined) {
       updates.push(`last_instruction = $${paramIndex++}`);
       values.push(data.last_instruction);
+    }
+    if (data.last_message_id !== undefined) {
+      updates.push(`last_message_id = $${paramIndex++}`);
+      values.push(data.last_message_id);
     }
 
     updates.push(`updated_at = NOW()`);

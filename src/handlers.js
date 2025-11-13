@@ -93,8 +93,42 @@ async function handleMessage(bot, msg) {
           session = await db.getSession(userId);
           const count = session.messages.length;
 
-          // Send confirmation
-          await bot.sendMessage(userId, `✓ ${count}`);
+          // Send or edit confirmation message
+          const messageText = `📝 Накоплено сообщений: ${count}`;
+
+          try {
+            if (session.last_message_id) {
+              // Try to edit existing message
+              await bot.editMessageText(messageText, {
+                chat_id: userId,
+                message_id: session.last_message_id
+              });
+            } else {
+              // Send new message and save its ID
+              const sentMessage = await bot.sendMessage(userId, messageText);
+              await db.updateSession(userId, { last_message_id: sentMessage.message_id });
+            }
+          } catch (error) {
+            // Handle editing errors
+            if (error.message.includes('message to edit not found') ||
+                error.message.includes('message can\'t be edited') ||
+                error.message.includes('MESSAGE_ID_INVALID')) {
+              // Message was deleted or too old, send new one
+              logger.warn('Message edit failed, sending new message', {
+                userId,
+                error: error.message,
+                oldMessageId: session.last_message_id
+              });
+              const sentMessage = await bot.sendMessage(userId, messageText);
+              await db.updateSession(userId, { last_message_id: sentMessage.message_id });
+            } else if (error.message.includes('message is not modified')) {
+              // Text hasn't changed, ignore (shouldn't happen with counter but just in case)
+              logger.debug('Message text not modified', { userId, count });
+            } else {
+              // Unknown error, re-throw to outer catch
+              throw error;
+            }
+          }
 
           // Log statistics
           await db.logAction({

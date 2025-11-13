@@ -43,7 +43,12 @@ async function handleAnalyze(bot, msg) {
   } catch (error) {
     logger.error('Analyze command failed', { userId, error: error.message });
     await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
-    await db.logAction({ userId, actionType: 'analyze_error', errorOccurred: true });
+    await db.logAction({
+      userId,
+      actionType: 'analyze_error',
+      errorOccurred: true,
+      errorMessage: error.message
+    });
   }
 }
 
@@ -63,7 +68,12 @@ async function handleClear(bot, msg) {
   } catch (error) {
     logger.error('Clear command failed', { userId, error: error.message });
     await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
-    await db.logAction({ userId, actionType: 'clear_error', errorOccurred: true });
+    await db.logAction({
+      userId,
+      actionType: 'clear_error',
+      errorOccurred: true,
+      errorMessage: error.message
+    });
   }
 }
 
@@ -104,7 +114,12 @@ async function handleHelp(bot, msg) {
     });
   } catch (error) {
     logger.error('Help command failed', { userId, error: error.message });
-    await db.logAction({ userId, actionType: 'help_error', errorOccurred: true });
+    await db.logAction({
+      userId,
+      actionType: 'help_error',
+      errorOccurred: true,
+      errorMessage: error.message
+    });
   }
 }
 

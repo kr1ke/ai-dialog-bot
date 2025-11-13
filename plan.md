@@ -15,12 +15,9 @@ telegram-context-bot/
 │   ├── handlers.js           # Message/callback handlers
 │   ├── commands.js           # /analyze, /clear, /help
 │   ├── processors/
-│   │   ├── text.js           # Text analysis via OpenRouter
-│   │   ├── vision.js         # Image recognition
-│   │   └── voice.js          # Voice transcription
+│   │   └── text.js           # Text analysis via OpenRouter
 │   ├── services/
 │   │   ├── openrouter.js     # OpenRouter API calls
-│   │   ├── telegram.js       # File download helpers
 │   │   └── db.js             # All database operations
 │   ├── logger.js             # Winston setup
 │   └── config.js             # Load from .env
@@ -77,17 +74,19 @@ CREATE TABLE logs (
 **messages JSONB format:**
 ```json
 [{
-  "text": "Hello",
+  "text": "Hello or [Изображение], [Голосовое сообщение], etc.",
   "author": {
     "isUser": false,
     "name": "Maria",
     "id": 12345
   },
   "timestamp": 1699887600,
-  "type": "text",
+  "type": "text|image|voice|video|sticker|document",
   "metadata": {}
 }]
 ```
+
+**MVP Note**: Media types (images, voice, video, etc.) are stored as placeholders without processing the content.
 
 ---
 
@@ -126,8 +125,12 @@ IF FORWARDED:
     * Else → isUser: false, name from forward_from.first_name
   - Process message type:
     * text → save msg.text
-    * photo → call vision.analyzeImage(), save description
-    * voice → call voice.transcribe(), save transcription
+    * photo → save placeholder "[Изображение]"
+    * voice → save placeholder "[Голосовое сообщение]"
+    * video → save placeholder "[Видео]"
+    * sticker → save placeholder "[Стикер]"
+    * document → save placeholder "[Документ]"
+    * other → skip with error message
   - INSERT message into session.messages JSONB
   - Send reply: "✓ {count}"
   - INSERT into statistics (action_type: 'forward_message')
@@ -236,36 +239,9 @@ IF regenerate:
 - formal: "Помоги составить официальный ответ. Вежливый и профессиональный"
 - friendly: "Помоги составить дружеский ответ. Теплый и естественный"
 
-### src/processors/vision.js
+### ~~src/processors/vision.js~~ (Removed - MVP uses placeholders)
 
-**analyzeImage(bot, fileId)**
-```
-1. Call telegram.downloadFileAsBase64(bot, fileId)
-2. Call openrouter.chatCompletion({
-     model: config.VISION_MODEL,
-     messages: [{
-       role: 'user',
-       content: [
-         {type: 'text', text: 'Опиши изображение кратко на русском (1-2 предложения)'},
-         {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,{base64}'}}
-       ]
-     }]
-   })
-3. Return description text
-```
-
-### src/processors/voice.js
-
-**transcribe(bot, fileId)**
-```
-1. Call telegram.downloadFile(bot, fileId) → Buffer
-2. Create FormData:
-   - formData.append('file', buffer, 'audio.ogg')
-   - formData.append('model', config.VOICE_MODEL)
-   - formData.append('language', 'ru')
-3. POST to OpenRouter audio/transcriptions endpoint
-4. Return transcription.text
-```
+### ~~src/processors/voice.js~~ (Removed - MVP uses placeholders)
 
 ### src/services/openrouter.js
 
@@ -285,33 +261,9 @@ Return response.data
 If error → throw new Error('OpenRouter API failed')
 ```
 
-**transcribeAudio(formData)**
-```
-POST https://openrouter.ai/api/v1/audio/transcriptions
-Headers:
-  - Authorization: Bearer {apiKey}
-  - ...formData.getHeaders()
-Body: formData
+~~**transcribeAudio(formData)**~~ (Removed - MVP doesn't process audio)
 
-Return response.data
-If error → throw error
-```
-
-### src/services/telegram.js
-
-**downloadFile(bot, fileId)**
-```
-1. file = await bot.getFile(fileId)
-2. fileUrl = https://api.telegram.org/file/bot{token}/{file.file_path}
-3. response = await axios.get(fileUrl, {responseType: 'arraybuffer'})
-4. return Buffer.from(response.data)
-```
-
-**downloadFileAsBase64(bot, fileId)**
-```
-1. buffer = await downloadFile(bot, fileId)
-2. return buffer.toString('base64')
-```
+### ~~src/services/telegram.js~~ (Removed - MVP doesn't download files)
 
 ### src/services/db.js
 
@@ -350,9 +302,7 @@ require('dotenv').config();
 module.exports = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-  TEXT_MODEL: process.env.TEXT_MODEL || 'anthropic/claude-3.5-sonnet',
-  VISION_MODEL: process.env.VISION_MODEL || 'google/gemini-2.0-flash-exp:free',
-  VOICE_MODEL: process.env.VOICE_MODEL || 'openai/whisper-1',
+  TEXT_MODEL: process.env.TEXT_MODEL || 'deepseek/deepseek-chat-v3.1',
   DATABASE_URL: process.env.DATABASE_URL,
   LOG_LEVEL: process.env.LOG_LEVEL || 'info'
 };
@@ -433,9 +383,7 @@ volumes:
 TELEGRAM_BOT_TOKEN=
 OPENROUTER_API_KEY=
 
-TEXT_MODEL=anthropic/claude-3.5-sonnet
-VISION_MODEL=google/gemini-2.0-flash-exp:free
-VOICE_MODEL=openai/whisper-1
+TEXT_MODEL=deepseek/deepseek-chat-v3.1
 
 DATABASE_URL=postgresql://botuser:password@db:5432/telegram_bot
 DB_PASSWORD=your_secure_password
@@ -453,13 +401,12 @@ LOG_LEVEL=info
 4. Implement config.js + logger.js
 5. Implement services/db.js with migrations runner
 6. Implement services/openrouter.js
-7. Implement services/telegram.js
-8. Implement processors (text, vision, voice)
-9. Implement handlers.js
-10. Implement commands.js
-11. Implement index.js
-12. Create Dockerfile + docker-compose.yml
-13. Test with `docker-compose up`
+7. Implement processors/text.js
+8. Implement handlers.js (with media placeholder logic)
+9. Implement commands.js
+10. Implement index.js
+11. Create Dockerfile + docker-compose.yml
+12. Test with `docker-compose up`
 
 ---
 

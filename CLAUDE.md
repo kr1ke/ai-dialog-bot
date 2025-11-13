@@ -27,7 +27,7 @@ npm install
 
 1. **Session Management**: Each user has a session that stores forwarded messages in PostgreSQL JSONB format
 2. **State Machine**: `idle` → `collecting` → `waiting_action` → `conversation`
-3. **Message Processing**: Text/Voice/Image → OpenRouter API → Contextual response generation
+3. **Message Processing**: Text messages → OpenRouter API → Contextual response generation. Media (images/voice/video/stickers) stored as placeholders for context.
 
 ### Critical Business Rules
 
@@ -44,12 +44,9 @@ src/
 ├── handlers.js           # Core logic: handleMessage, handleCallback
 ├── commands.js           # Bot commands: /analyze, /clear, /help
 ├── processors/
-│   ├── text.js          # Text analysis via OpenRouter
-│   ├── vision.js        # Image recognition
-│   └── voice.js         # Voice transcription
+│   └── text.js          # Text analysis via OpenRouter
 ├── services/
 │   ├── openrouter.js    # OpenRouter API wrapper
-│   ├── telegram.js      # File download utilities
 │   └── db.js            # All database operations
 ├── logger.js            # Winston configuration
 └── config.js            # Environment variable loading
@@ -66,17 +63,19 @@ src/
 **messages JSONB structure**:
 ```json
 [{
-  "text": "Message content or description",
+  "text": "Message content or placeholder like [Изображение], [Голосовое сообщение], [Видео], [Стикер]",
   "author": {
     "isUser": false,
     "name": "Maria",
     "id": 12345
   },
   "timestamp": 1699887600,
-  "type": "text|image|voice",
+  "type": "text|image|voice|video|sticker|document",
   "metadata": {}
 }]
 ```
+
+**MVP Limitation**: Only text from the user is fully processed. Media types (images, voice, video, stickers, documents) are stored as simple placeholders (e.g., `[Изображение]`) in the context. This gives AI awareness of media presence without processing the content.
 
 **statistics table**: Tracks all user actions, model usage, tokens, response times, errors
 
@@ -87,7 +86,9 @@ src/
 **Forwarded messages** (`msg.forward_date` exists):
 - Delete existing session (always reset)
 - Create new session with state `'collecting'`
-- Process message type (text/photo/voice)
+- Process message type:
+  - **Text**: Store as-is
+  - **Media** (photo/voice/video/sticker/document): Store placeholder text like `[Изображение]`, `[Голосовое сообщение]`, etc.
 - Append to session's `messages` JSONB array
 - Reply with message count: "✓ {count}"
 
@@ -99,9 +100,7 @@ src/
 ### AI Integration
 
 **OpenRouter Models** (configured via .env):
-- `TEXT_MODEL`: Default `anthropic/claude-3.5-sonnet` for text analysis
-- `VISION_MODEL`: Default `google/gemini-2.0-flash-exp:free` for images
-- `VOICE_MODEL`: Default `openai/whisper-1` for transcription
+- `TEXT_MODEL`: Default `deepseek/deepseek-chat-v3.1` for text analysis
 
 **Instruction Templates**:
 - `summary`: "Кратко резюмируй переписку: что хотел собеседник, что ответил пользователь, что лучше ответить дальше"
@@ -150,7 +149,7 @@ Required in `.env`:
 - `DB_PASSWORD`: Used in docker-compose for PostgreSQL
 
 Optional:
-- `TEXT_MODEL`, `VISION_MODEL`, `VOICE_MODEL`: Override default models
+- `TEXT_MODEL`: Override default text model (default: `deepseek/deepseek-chat-v3.1`)
 - `LOG_LEVEL`: Winston log level (default: `info`)
 
 ## Implementation Status

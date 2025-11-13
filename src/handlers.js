@@ -1,7 +1,5 @@
 const db = require('./services/db');
 const textProcessor = require('./processors/text');
-const visionProcessor = require('./processors/vision');
-const voiceProcessor = require('./processors/voice');
 const logger = require('./logger');
 
 // Message processing queue per user (prevents race conditions)
@@ -68,21 +66,36 @@ async function handleMessage(bot, msg) {
             messageData.text = msg.text;
             messageData.type = 'text';
           } else if (msg.photo) {
-            // Photo message
-            const fileId = msg.photo[msg.photo.length - 1].file_id;
-            const description = await visionProcessor.analyzeImage(bot, fileId, userId);
-            messageData.text = `[Изображение: ${description}]`;
+            // Photo message - store as placeholder
+            messageData.text = '[Изображение]';
             messageData.type = 'image';
-            messageData.metadata.fileId = fileId;
           } else if (msg.voice) {
-            // Voice message
-            const transcription = await voiceProcessor.transcribe(bot, msg.voice.file_id, userId);
-            messageData.text = transcription;
+            // Voice message - store as placeholder
+            messageData.text = '[Голосовое сообщение]';
             messageData.type = 'voice';
-            messageData.metadata.fileId = msg.voice.file_id;
+          } else if (msg.video) {
+            // Video message - store as placeholder
+            messageData.text = '[Видео]';
+            messageData.type = 'video';
+          } else if (msg.sticker) {
+            // Sticker - store as placeholder
+            messageData.text = '[Стикер]';
+            messageData.type = 'sticker';
+          } else if (msg.document) {
+            // Document - store as placeholder
+            messageData.text = '[Документ]';
+            messageData.type = 'document';
+          } else if (msg.audio) {
+            // Audio file - store as placeholder
+            messageData.text = '[Аудиофайл]';
+            messageData.type = 'audio';
+          } else if (msg.video_note) {
+            // Video note (circle) - store as placeholder
+            messageData.text = '[Видеосообщение]';
+            messageData.type = 'video_note';
           } else {
-            // Unsupported message type
-            await bot.sendMessage(userId, '❌ Этот тип сообщения не поддерживается');
+            // Unsupported message type - skip silently
+            logger.debug('Unsupported forwarded message type', { userId, msg });
             return;
           }
 
@@ -139,7 +152,12 @@ async function handleMessage(bot, msg) {
         } catch (error) {
           logger.error('Forwarded message handling failed', { userId, error: error.message });
           await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
-          await db.logAction({ userId, actionType: 'forward_error', errorOccurred: true });
+          await db.logAction({
+            userId,
+            actionType: 'forward_error',
+            errorOccurred: true,
+            errorMessage: error.message
+          });
         }
       });
     }
@@ -198,7 +216,12 @@ async function handleMessage(bot, msg) {
   } catch (error) {
     logger.error('Message handling failed', { userId, error: error.message });
     await bot.sendMessage(userId, '❌ Сервис временно недоступен, попробуй позже');
-    await db.logAction({ userId, actionType: 'message_error', errorOccurred: true });
+    await db.logAction({
+      userId,
+      actionType: 'message_error',
+      errorOccurred: true,
+      errorMessage: error.message
+    });
   }
 }
 
@@ -308,7 +331,12 @@ async function handleCallback(bot, query) {
       text: '❌ Сервис временно недоступен',
       show_alert: true
     });
-    await db.logAction({ userId, actionType: 'callback_error', errorOccurred: true });
+    await db.logAction({
+      userId,
+      actionType: 'callback_error',
+      errorOccurred: true,
+      errorMessage: error.message
+    });
   }
 }
 

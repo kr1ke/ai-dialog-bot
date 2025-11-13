@@ -33,30 +33,6 @@ async function chatCompletion(params) {
   }
 }
 
-// Transcribe audio via OpenRouter
-async function transcribeAudio(formData) {
-  try {
-    const response = await axios.post(
-      `${OPENROUTER_BASE_URL}/audio/transcriptions`,
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-          ...formData.getHeaders()
-        }
-      }
-    );
-
-    return response.data;
-  } catch (error) {
-    logger.error('OpenRouter audio transcription failed', {
-      error: error.message
-    });
-    throw error;
-  }
-}
-
 module.exports = {
-  chatCompletion,
-  transcribeAudio
+  chatCompletion
 };

@@ -210,13 +210,14 @@ async function logAction(statsData) {
       modelUsed = null,
       tokensUsed = null,
       responseTimeMs = null,
-      errorOccurred = false
+      errorOccurred = false,
+      errorMessage = null
     } = statsData;
 
     await pool.query(
       `INSERT INTO statistics
-       (user_id, action_type, action_data, session_messages_count, model_used, tokens_used, response_time_ms, error_occurred)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       (user_id, action_type, action_data, session_messages_count, model_used, tokens_used, response_time_ms, error_occurred, error_message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         userId,
         actionType,
@@ -225,7 +226,8 @@ async function logAction(statsData) {
         modelUsed,
         tokensUsed,
         responseTimeMs,
-        errorOccurred
+        errorOccurred,
+        errorMessage
       ]
     );
   } catch (error) {

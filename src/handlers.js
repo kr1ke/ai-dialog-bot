@@ -1,6 +1,7 @@
 const db = require('./services/db');
 const textProcessor = require('./processors/text');
 const mediaProcessor = require('./processors/media');
+const limitsValidator = require('./validators/limits');
 const logger = require('./logger');
 
 // Message processing queue per user (prevents race conditions)
@@ -113,26 +114,48 @@ async function handleMessage(bot, msg) {
             return;
           }
 
+          // Validate limits BEFORE adding message
+          const validation = limitsValidator.validateNewMessage(session, messageData);
+          if (!validation.valid) {
+            await bot.sendMessage(userId, validation.error);
+            await db.logAction({
+              userId,
+              actionType: 'limit_exceeded',
+              actionData: { limitType: validation.limitType },
+              sessionMessagesCount: session.messages.length
+            });
+            return; // Stop processing
+          }
+
           // Add message to session
           await db.addMessageToSession(userId, messageData);
 
           // Get updated session to count messages
           session = await db.getSession(userId);
-          const count = session.messages.length;
 
-          // Send or edit confirmation message
-          const messageText = `📝 Накоплено сообщений: ${count}`;
+          // Format progress message with limits
+          const messageText = limitsValidator.formatProgressMessage(session);
 
           try {
+            // Add /analyze button if there are messages
+            const replyMarkup = session.messages.length > 0 ? {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '📊 Анализировать', callback_data: '/analyze' }]
+                ]
+              }
+            } : {};
+
             if (session.last_message_id) {
               // Try to edit existing message
               await bot.editMessageText(messageText, {
                 chat_id: userId,
-                message_id: session.last_message_id
+                message_id: session.last_message_id,
+                ...replyMarkup
               });
             } else {
               // Send new message and save its ID
-              const sentMessage = await bot.sendMessage(userId, messageText);
+              const sentMessage = await bot.sendMessage(userId, messageText, replyMarkup);
               await db.updateSession(userId, { last_message_id: sentMessage.message_id });
             }
           } catch (error) {
@@ -146,11 +169,17 @@ async function handleMessage(bot, msg) {
                 error: error.message,
                 oldMessageId: session.last_message_id
               });
-              const sentMessage = await bot.sendMessage(userId, messageText);
+              const sentMessage = await bot.sendMessage(userId, messageText, {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '📊 Анализировать', callback_data: '/analyze' }]
+                  ]
+                }
+              });
               await db.updateSession(userId, { last_message_id: sentMessage.message_id });
             } else if (error.message.includes('message is not modified')) {
               // Text hasn't changed, ignore (shouldn't happen with counter but just in case)
-              logger.debug('Message text not modified', { userId, count });
+              logger.debug('Message text not modified', { userId, messagesCount: session.messages.length });
             } else {
               // Unknown error, re-throw to outer catch
               throw error;
@@ -161,7 +190,7 @@ async function handleMessage(bot, msg) {
           await db.logAction({
             userId,
             actionType: 'forward_message',
-            sessionMessagesCount: count
+            sessionMessagesCount: session.messages.length
           });
         } catch (error) {
           logger.error('Forwarded message handling failed', { userId, error: error.message });
@@ -193,6 +222,13 @@ async function handleMessage(bot, msg) {
       }
 
       if (session.state === 'waiting_action' || session.state === 'conversation') {
+        // Send typing indicator
+        try {
+          await bot.sendChatAction(userId, 'typing');
+        } catch (error) {
+          // Ignore - typing failures are non-critical
+        }
+
         // Process custom request with multimodal support
         const { result, metadata } = await mediaProcessor.processMultimodalContext(
           bot,
@@ -255,8 +291,24 @@ async function handleCallback(bot, query) {
       return;
     }
 
+    // Handle /analyze button
+    if (action === '/analyze') {
+      // Call analyze command handler
+      const commands = require('./commands');
+      await commands.handleAnalyze(bot, { from: { id: userId } });
+      await bot.answerCallbackQuery(query.id);
+      return;
+    }
+
     // Handle different actions
     if (action === 'summary' || action === 'formal' || action === 'friendly') {
+      // Send typing indicator
+      try {
+        await bot.sendChatAction(userId, 'typing');
+      } catch (error) {
+        // Ignore - typing failures are non-critical
+      }
+
       // Process with predefined instruction using multimodal processor
       const { result, metadata } = await mediaProcessor.processMultimodalContext(
         bot,
@@ -309,6 +361,13 @@ async function handleCallback(bot, query) {
           show_alert: true
         });
         return;
+      }
+
+      // Send typing indicator
+      try {
+        await bot.sendChatAction(userId, 'typing');
+      } catch (error) {
+        // Ignore - typing failures are non-critical
       }
 
       const { result, metadata } = await mediaProcessor.processMultimodalContext(

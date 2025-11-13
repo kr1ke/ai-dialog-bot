@@ -122,7 +122,7 @@ ${conversationText}
       const response = await openrouter.chatCompletion({
         model: config.UNIFIED_MODEL,
         messages: [
-          { role: 'system', content: 'Ты помогаешь в переписках' },
+          { role: 'system', content: 'Ты помогаешь в переписках. Не используй таблицы, заголовки (# ## ###), ``` и цитаты (>) - они не поддерживаются в Telegram.' },
           { role: 'user', content: prompt }
         ]
       });
@@ -158,7 +158,7 @@ ${conversationText}
       messages: [
         { 
           role: 'system', 
-          content: 'Ты помогаешь в переписках. Анализируй весь контекст: текст, изображения и голосовые сообщения.' 
+          content: 'Ты помогаешь в переписках. Анализируй весь контекст: текст, изображения и голосовые сообщения. Не используй таблицы, заголовки (# ## ###), ``` и цитаты (>) - они не поддерживаются в Telegram.' 
         },
         { 
           role: 'user',

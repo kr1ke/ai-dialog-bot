@@ -19,7 +19,7 @@ async function handleAnalyze(bot, msg) {
     // Send message with action buttons
     await bot.sendMessage(
       userId,
-      `📊 В буфере ${session.messages.length} сообщений.\n\nВыбери действие:`,
+      `📊 В буфере ${session.messages.length} сообщений.\n\nВыбери действие или напиши свой запрос:`,
       {
         reply_markup: {
           inline_keyboard: [

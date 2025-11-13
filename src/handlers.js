@@ -1,5 +1,6 @@
 const db = require('./services/db');
 const textProcessor = require('./processors/text');
+const mediaProcessor = require('./processors/media');
 const logger = require('./logger');
 
 // Message processing queue per user (prevents race conditions)
@@ -66,13 +67,26 @@ async function handleMessage(bot, msg) {
             messageData.text = msg.text;
             messageData.type = 'text';
           } else if (msg.photo) {
-            // Photo message - store as placeholder
+            // Photo message - store file_id for processing
+            const photo = msg.photo[msg.photo.length - 1]; // largest size
             messageData.text = '[Изображение]';
             messageData.type = 'image';
+            messageData.metadata = {
+              file_id: photo.file_id,
+              file_size: photo.file_size,
+              width: photo.width,
+              height: photo.height
+            };
           } else if (msg.voice) {
-            // Voice message - store as placeholder
+            // Voice message - store file_id for processing
             messageData.text = '[Голосовое сообщение]';
             messageData.type = 'voice';
+            messageData.metadata = {
+              file_id: msg.voice.file_id,
+              file_size: msg.voice.file_size,
+              duration: msg.voice.duration,
+              mime_type: msg.voice.mime_type
+            };
           } else if (msg.video) {
             // Video message - store as placeholder
             messageData.text = '[Видео]';
@@ -179,8 +193,8 @@ async function handleMessage(bot, msg) {
       }
 
       if (session.state === 'waiting_action' || session.state === 'conversation') {
-        // Process custom request
-        const { result, metadata } = await textProcessor.processContext(
+        // Process custom request with multimodal support
+        const { result, metadata } = await mediaProcessor.processMultimodalContext(
           bot,
           session.messages,
           msg.text,
@@ -243,8 +257,8 @@ async function handleCallback(bot, query) {
 
     // Handle different actions
     if (action === 'summary' || action === 'formal' || action === 'friendly') {
-      // Process with predefined instruction
-      const { result, metadata } = await textProcessor.processContext(
+      // Process with predefined instruction using multimodal processor
+      const { result, metadata } = await mediaProcessor.processMultimodalContext(
         bot,
         session.messages,
         action,
@@ -297,7 +311,7 @@ async function handleCallback(bot, query) {
         return;
       }
 
-      const { result, metadata } = await textProcessor.processContext(
+      const { result, metadata } = await mediaProcessor.processMultimodalContext(
         bot,
         session.messages,
         session.last_instruction,

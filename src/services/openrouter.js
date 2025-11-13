@@ -7,14 +7,18 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 // Chat completion via OpenRouter
 async function chatCompletion(params) {
   try {
+    const requestBody = {
+      model: params.model,
+      messages: params.messages,
+      temperature: params.temperature || 0.7,
+      max_tokens: params.max_tokens || 1000
+    };
+
+    // Support for multimodal content (images/audio)
+    // Gemini accepts messages with content array instead of plain text
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      {
-        model: params.model,
-        messages: params.messages,
-        temperature: params.temperature || 0.7,
-        max_tokens: params.max_tokens || 1000
-      },
+      requestBody,
       {
         headers: {
           'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,

@@ -61,7 +61,7 @@ ${conversation}
 
     // Call OpenRouter API
     const response = await openrouter.chatCompletion({
-      model: config.TEXT_MODEL,
+      model: config.UNIFIED_MODEL,
       messages: [
         { role: 'system', content: 'Ты помогаешь в переписках' },
         { role: 'user', content: prompt }
@@ -73,7 +73,7 @@ ${conversation}
 
     // Store metadata for statistics
     const metadata = {
-      model: config.TEXT_MODEL,
+      model: config.UNIFIED_MODEL,
       tokens: response.usage?.total_tokens || null,
       responseTime
     };

@@ -4,10 +4,17 @@ const config = require('../config');
 const logger = require('../logger');
 
 // Analyze image and return description
-async function analyzeImage(bot, fileId) {
+async function analyzeImage(bot, fileId, userId) {
   try {
     // Download file as base64
     const base64Image = await telegram.downloadFileAsBase64(bot, fileId);
+
+    // Send typing status
+    try {
+      await bot.sendChatAction(userId, 'typing');
+    } catch (error) {
+      // Ignore - typing failures are non-critical
+    }
 
     // Call OpenRouter vision API
     const response = await openrouter.chatCompletion({

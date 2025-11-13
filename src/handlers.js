@@ -70,13 +70,13 @@ async function handleMessage(bot, msg) {
           } else if (msg.photo) {
             // Photo message
             const fileId = msg.photo[msg.photo.length - 1].file_id;
-            const description = await visionProcessor.analyzeImage(bot, fileId);
+            const description = await visionProcessor.analyzeImage(bot, fileId, userId);
             messageData.text = `[Изображение: ${description}]`;
             messageData.type = 'image';
             messageData.metadata.fileId = fileId;
           } else if (msg.voice) {
             // Voice message
-            const transcription = await voiceProcessor.transcribe(bot, msg.voice.file_id);
+            const transcription = await voiceProcessor.transcribe(bot, msg.voice.file_id, userId);
             messageData.text = transcription;
             messageData.type = 'voice';
             messageData.metadata.fileId = msg.voice.file_id;
@@ -129,6 +129,7 @@ async function handleMessage(bot, msg) {
       if (session.state === 'waiting_action' || session.state === 'conversation') {
         // Process custom request
         const { result, metadata } = await textProcessor.processContext(
+          bot,
           session.messages,
           msg.text,
           userId
@@ -187,6 +188,7 @@ async function handleCallback(bot, query) {
     if (action === 'summary' || action === 'formal' || action === 'friendly') {
       // Process with predefined instruction
       const { result, metadata } = await textProcessor.processContext(
+        bot,
         session.messages,
         action,
         userId
@@ -239,6 +241,7 @@ async function handleCallback(bot, query) {
       }
 
       const { result, metadata } = await textProcessor.processContext(
+        bot,
         session.messages,
         session.last_instruction,
         userId

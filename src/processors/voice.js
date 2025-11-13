@@ -5,7 +5,7 @@ const config = require('../config');
 const logger = require('../logger');
 
 // Transcribe voice message
-async function transcribe(bot, fileId) {
+async function transcribe(bot, fileId, userId) {
   try {
     // Download file as buffer
     const buffer = await telegram.downloadFile(bot, fileId);
@@ -15,6 +15,13 @@ async function transcribe(bot, fileId) {
     formData.append('file', buffer, 'audio.ogg');
     formData.append('model', config.VOICE_MODEL);
     formData.append('language', 'ru');
+
+    // Send typing status
+    try {
+      await bot.sendChatAction(userId, 'typing');
+    } catch (error) {
+      // Ignore - typing failures are non-critical
+    }
 
     // Call OpenRouter audio transcription
     const response = await openrouter.transcribeAudio(formData);

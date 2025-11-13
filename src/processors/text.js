@@ -32,7 +32,7 @@ function buildConversationString(messages) {
 }
 
 // Process context and generate response
-async function processContext(messages, instruction, userId) {
+async function processContext(bot, messages, instruction, userId) {
   try {
     const startTime = Date.now();
 
@@ -51,6 +51,13 @@ ${conversation}
 ВАЖНО: 'Ты' - это пользователь. Остальные - собеседники.
 
 ЗАДАЧА: ${instructionText}`;
+
+    // Send typing status
+    try {
+      await bot.sendChatAction(userId, 'typing');
+    } catch (error) {
+      // Ignore - typing failures are non-critical
+    }
 
     // Call OpenRouter API
     const response = await openrouter.chatCompletion({
